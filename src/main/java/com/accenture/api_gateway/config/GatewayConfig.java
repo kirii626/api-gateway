@@ -1,18 +1,16 @@
 package com.accenture.api_gateway.config;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+@RequiredArgsConstructor
 @Configuration
 public class GatewayConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-
-    public GatewayConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
-        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
-    }
 
     @Bean
     public RouteLocator customRouteLocator(RouteLocatorBuilder routeLocatorBuilder) {
