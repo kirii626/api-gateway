@@ -3,29 +3,28 @@ package com.accenture.api_gateway.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import jakarta.ws.rs.core.HttpHeaders;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+
 
 
 @Component
 public class JwtAuthenticationFilter implements GatewayFilter {
 
-    private static final Logger logger = Logger.getLogger(JwtAuthenticationFilter.class.getName());
+    private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
-    @Autowired
-    private JwtUtils jwtUtils;
+    private final JwtUtils jwtUtils;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -37,6 +36,9 @@ public class JwtAuthenticationFilter implements GatewayFilter {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String token = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         String requestPath = exchange.getRequest().getPath().toString();
+
+        HttpMethod method = exchange.getRequest().getMethod();
+        logger.info("Incoming request: {} {}", method, requestPath);
 
         if (!exchange.getRequest().getPath().toString().startsWith("/api/auth")) {
             if (token == null || !token.startsWith("Bearer ")) {
@@ -54,7 +56,7 @@ public class JwtAuthenticationFilter implements GatewayFilter {
                 String username = claims.getSubject();
                 String roleType = claims.get("roleType", String.class);
 
-                logger.info("Valid token for user: " + username + " | Role: " + roleType);
+                logger.info("Valid token for user: {} | Role: {}", username, roleType);
 
                 if ((requestPath.startsWith("/api/admin"))
                         && !"ADMIN".equals(roleType)) {
@@ -69,7 +71,8 @@ public class JwtAuthenticationFilter implements GatewayFilter {
 
                 return chain.filter(modifiedExchange);
             } catch (Exception e) {
-                return onError(exchange, "JWT Token validation failed: " + e.getMessage(), HttpStatus.UNAUTHORIZED);
+                logger.error("JWT token parsing failed ", e);
+                return onError(exchange, "Invalid authentication token", HttpStatus.UNAUTHORIZED);
             }
         }
 
@@ -77,7 +80,7 @@ public class JwtAuthenticationFilter implements GatewayFilter {
     }
 
     private Mono<Void> onError(ServerWebExchange exchange, String err, HttpStatus httpStatus) {
-        logger.warning(err + " - Path: " + exchange.getRequest().getPath());
+        logger.warn("{} - Path: {}", err, exchange.getRequest().getPath());
 
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("error", httpStatus.getReasonPhrase());
@@ -95,7 +98,7 @@ public class JwtAuthenticationFilter implements GatewayFilter {
                     .bufferFactory().wrap(responseBytes)));
 
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to write JSON error response", e);
+            logger.warn("Failed to write JSON error response ", e);
             exchange.getResponse().setStatusCode(HttpStatus.INTERNAL_SERVER_ERROR);
             return exchange.getResponse().setComplete();
         }
