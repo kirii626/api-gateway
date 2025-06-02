@@ -31,13 +31,13 @@ public class JwtAuthenticationFilter implements GatewayFilter {
 
         log.info("Incoming request: {} {}", method, path);
 
-        if (!path.startsWith("/api/auth")) {
+        if (!path.startsWith("/api/user/auth")) {
             try {
                 Claims claims = jwtProcessor.validateAndParse(token).orElseThrow();
                 String username = claims.getSubject();
                 String role = claims.get("roleType", String.class);
 
-                if (path.startsWith("/api/admin") && !"ADMIN".equals(role)) {
+                if (path.contains("/admin")  && !"ADMIN".equals(role)) {
                     return errorResponseBuilder.build(exchange, "Access Denied", HttpStatus.FORBIDDEN);
                 }
 
