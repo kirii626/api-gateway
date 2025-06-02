@@ -29,7 +29,7 @@ class JwtRequestProcessorTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        jwtRequestProcessor = new JwtRequestProcessor(jwtUtils); // <-- construís a mano con el mock
+        jwtRequestProcessor = new JwtRequestProcessor(jwtUtils);
     }
 
     @Test

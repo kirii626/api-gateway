@@ -2,6 +2,7 @@ package com.accenture.api_gateway.config;
 
 import com.accenture.api_gateway.exceptions.ErrorResponseBuilder;
 import com.accenture.api_gateway.exceptions.JwtAuthenticationException;
+import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +18,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -25,7 +27,7 @@ import static org.mockito.Mockito.*;
 class JwtAuthenticationFilterTest {
 
     @Mock
-    private JwtRequestProcessor jwtRequestProcessor;
+    private JwtRequestProcessor jwtProcessor;
 
     @Mock
     private ErrorResponseBuilder errorResponseBuilder;
@@ -33,62 +35,94 @@ class JwtAuthenticationFilterTest {
     @Mock
     private GatewayFilterChain filterChain;
 
-    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    @Mock
+    private Claims claims;
 
-    private MockServerHttpRequest request;
-    private ServerWebExchange exchange;
+    private JwtAuthenticationFilter filter;
 
     @BeforeEach
     void setUp() {
-        jwtAuthenticationFilter = new JwtAuthenticationFilter(jwtRequestProcessor, errorResponseBuilder);
+        filter = new JwtAuthenticationFilter(jwtProcessor, errorResponseBuilder);
     }
 
     @Test
-    void shouldAllowRequestsToAuthPathWithoutValidation() {
-        request = MockServerHttpRequest.get("/api/auth/login").build();
-        exchange = MockServerWebExchange.from(request);
+    void allowsAuthPathWithoutValidation() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/user/auth/login").build();
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
 
         when(filterChain.filter(exchange)).thenReturn(Mono.empty());
 
-        StepVerifier.create(jwtAuthenticationFilter.filter(exchange, filterChain))
+        StepVerifier.create(filter.filter(exchange, filterChain))
                 .verifyComplete();
 
-        verify(jwtRequestProcessor, never()).validateAndParse(any());
+        verify(jwtProcessor, never()).validateAndParse(any());
         verify(filterChain).filter(exchange);
     }
 
     @Test
-    void shouldReturnUnauthorizedIfTokenIsMissing() {
-        request = MockServerHttpRequest.get("/api/secure/data").build();
-        exchange = MockServerWebExchange.from(request);
+    void allowsAccessWithValidTokenAndRole() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/secure/data")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer token")
+                .build();
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
 
-        Mono<Void> errorMono = Mono.empty();
-        when(errorResponseBuilder.build(exchange, "Missing or invalid Authorization header", HttpStatus.UNAUTHORIZED))
-                .thenReturn(errorMono);
+        when(jwtProcessor.validateAndParse("Bearer token")).thenReturn(Optional.of(claims));
+        when(claims.getSubject()).thenReturn("user1");
+        when(claims.get("roleType", String.class)).thenReturn("USER");
+        when(filterChain.filter(any(ServerWebExchange.class))).thenReturn(Mono.empty());
 
-        when(jwtRequestProcessor.validateAndParse(null))
-                .thenThrow(new JwtAuthenticationException("Missing or invalid Authorization header", HttpStatus.UNAUTHORIZED));
-
-        StepVerifier.create(jwtAuthenticationFilter.filter(exchange, filterChain))
+        StepVerifier.create(filter.filter(exchange, filterChain))
                 .verifyComplete();
 
-        verify(errorResponseBuilder).build(exchange, "Missing or invalid Authorization header", HttpStatus.UNAUTHORIZED);
+        verify(filterChain).filter(any(ServerWebExchange.class));
     }
 
     @Test
-    void shouldReturnUnauthorizedOnUnexpectedException() {
-        request = MockServerHttpRequest.get("/api/secure/data")
-                .header(HttpHeaders.AUTHORIZATION, "Bearer something")
+    void deniesAccessToAdminPathForNonAdminRole() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/admin/dashboard")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer token")
                 .build();
-        exchange = MockServerWebExchange.from(request);
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
 
-        when(jwtRequestProcessor.validateAndParse("something"))
-                .thenThrow(new RuntimeException("Unexpected failure"));
+        when(jwtProcessor.validateAndParse("Bearer token")).thenReturn(Optional.of(claims));
+        when(claims.getSubject()).thenReturn("user1");
+        when(claims.get("roleType", String.class)).thenReturn("USER");
+        when(errorResponseBuilder.build(exchange, "Access Denied", HttpStatus.FORBIDDEN)).thenReturn(Mono.empty());
 
-        when(errorResponseBuilder.build(exchange, "Invalid authentication token", HttpStatus.UNAUTHORIZED))
-                .thenReturn(Mono.empty());
+        StepVerifier.create(filter.filter(exchange, filterChain))
+                .verifyComplete();
 
-        StepVerifier.create(jwtAuthenticationFilter.filter(exchange, filterChain))
+        verify(errorResponseBuilder).build(exchange, "Access Denied", HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void returnsUnauthorizedOnJwtAuthenticationException() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/secure/data")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer token")
+                .build();
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        JwtAuthenticationException ex = new JwtAuthenticationException("Invalid", HttpStatus.UNAUTHORIZED);
+        when(jwtProcessor.validateAndParse("Bearer token")).thenThrow(ex);
+        when(errorResponseBuilder.build(exchange, "Invalid", HttpStatus.UNAUTHORIZED)).thenReturn(Mono.empty());
+
+        StepVerifier.create(filter.filter(exchange, filterChain))
+                .verifyComplete();
+
+        verify(errorResponseBuilder).build(exchange, "Invalid", HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void returnsUnauthorizedOnUnexpectedException() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/secure/data")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer token")
+                .build();
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        when(jwtProcessor.validateAndParse("Bearer token")).thenThrow(new RuntimeException("Unexpected"));
+        when(errorResponseBuilder.build(exchange, "Invalid authentication token", HttpStatus.UNAUTHORIZED)).thenReturn(Mono.empty());
+
+        StepVerifier.create(filter.filter(exchange, filterChain))
                 .verifyComplete();
 
         verify(errorResponseBuilder).build(exchange, "Invalid authentication token", HttpStatus.UNAUTHORIZED);
