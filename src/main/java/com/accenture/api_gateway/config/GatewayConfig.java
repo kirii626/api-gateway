@@ -12,7 +12,7 @@ public class GatewayConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    private static final String USERURL = "lb://user-microservice";
+    private static final String USERURL = "lb://user-service";
     private static final String SALEPOINTURL = "lb://sale-point-service";
     private static final String ACCREDITATIONURL = "lb://accreditation-service";
 
