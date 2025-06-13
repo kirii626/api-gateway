@@ -1,0 +1,53 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+' Infraestructura
+package "Infrastructure Layer" {
+    [Eureka Server] <<registry>>
+    [API Gateway] <<gateway>>
+    [RabbitMQ] <<broker>>
+    [Redis] <<cache>>
+}
+
+' Microservicios y lógica de dominio
+package "Microservices" {
+    [User Service]
+    [Sale Point Service]
+    [Accreditation Service]
+    [Notification Service]
+}
+
+' Bases de datos
+database "User DB" as DB_User
+database "Sale Point DB" as DB_Sale
+database "Accreditation DB" as DB_Acc
+
+[User Service] --> [Redis]
+[Sale Point Service] --> [Redis]
+[Accreditation Service] --> [Redis]
+
+' Relaciones
+[API Gateway] --> [User Service]
+[API Gateway] --> [Sale Point Service]
+[API Gateway] --> [Accreditation Service]
+
+[Accreditation Service] --> [User Service] : Feign Client
+[Accreditation Service] --> [Sale Point Service] : Feign Client
+[Accreditation Service] --> [Notification Service] : Sends event\n(RabbitMQ)
+[Notification Service] --> [RabbitMQ] : Listener
+
+' Eureka
+[User Service] --> [Eureka Server]
+[Sale Point Service] --> [Eureka Server]
+[Accreditation Service] --> [Eureka Server]
+[Notification Service] --> [Eureka Server]
+[API Gateway] --> [Eureka Server]
+
+' DB Connections
+[User Service] --> DB_User
+[Sale Point Service] --> DB_Sale
+[Accreditation Service] --> DB_Acc
+
+@enduml

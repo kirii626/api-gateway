@@ -1,0 +1,73 @@
+@startuml
+skinparam dpi 300
+skinparam maxMessageSize 200
+
+actor Client
+participant "API Gateway" as Gateway
+participant "JWT Filter" as Filter
+participant "JWT Request Processor" as Processor
+participant "User Service" as User
+participant "SalePoint Service" as Sale
+participant "Accreditation Service" as Accred
+
+Client -> Gateway: HTTP Request
+
+alt Protected Route (/api/**/admin/** or /api/user/auth/**)
+    Gateway -> Filter: Validate Request
+    activate Filter
+
+    alt Missing Authorization Header
+        Filter --> Client: 401 Unauthorized - Missing Header
+    else Has Authorization Header
+        Filter -> Processor: Validate JWT Token
+        activate Processor
+
+        alt Invalid Token Format
+            Processor --> Filter: Invalid Bearer Format
+            Filter --> Client: 401 Unauthorized - Invalid Format
+        else Token Expired
+            Processor --> Filter: Token Expired
+            Filter --> Client: 401 Unauthorized - Expired Token
+        else Valid Token
+            Processor --> Filter: Token Valid + Claims
+            Filter --> Gateway: Authentication OK
+        end
+        deactivate Processor
+    end
+    deactivate Filter
+
+else Internal Route (/api/**/internal-use/**)
+    Gateway -> Gateway: Add X-Internal-Token Header
+end
+
+alt User Route (/api/user/**)
+    Gateway -> User: Forward Request
+    activate User
+    alt Success
+        User --> Gateway: 200 OK + Response
+    else Error
+        User --> Gateway: 4xx/5xx Error
+    end
+    deactivate User
+else SalePoint Route (/api/sale-point/**)
+    Gateway -> Sale: Forward Request
+    activate Sale
+    alt Success
+        Sale --> Gateway: 200 OK + Response
+    else Error
+        Sale --> Gateway: 4xx/5xx Error
+    end
+    deactivate Sale
+else Accreditation Route (/api/accreditation/**)
+    Gateway -> Accred: Forward Request
+    activate Accred
+    alt Success
+        Accred --> Gateway: 200 OK + Response
+    else Error
+        Accred --> Gateway: 4xx/5xx Error
+    end
+    deactivate Accred
+end
+
+Gateway --> Client: HTTP Response
+@enduml
